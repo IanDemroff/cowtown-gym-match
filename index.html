@@ -1,0 +1,1108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cowtown Gym Match</title>
+<meta name="description" content="Find a Fort Worth gym that fits how you train, discover gyms near your new place, and plan your tours.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<script src="vendor/leaflet/leaflet.js"></script>
+<style>
+/* Layout: a working tool. Left rail holds who you are and where you are (profile, location, limits, map);
+   the right column is the ranked list. One column on phones. Colors come from bumper-plate conventions:
+   20 kg blue is the accent, 15 kg yellow marks "you". */
+:root{
+  --bg:#F1F4F3; --surface:#FFFFFF; --sunk:#E6ECEA; --ink:#14201F; --muted:#586866; --line:#D3DBD8;
+  --accent:#1F4FD8; --accent-ink:#FFFFFF; --accent-soft:#E3EAFC;
+  --you:#B98600; --you-fill:#F2B705; --good:#1B7A4B; --warn:#A8500B; --warn-soft:#FBEBDD;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --r:6px;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0F1514; --surface:#18211F; --sunk:#111917; --ink:#E8EEEC; --muted:#9BABA8; --line:#2C3936;
+  --accent:#8AA6FF; --accent-ink:#0B1220; --accent-soft:#1E2A4A;
+  --you:#F5C63C; --you-fill:#F5C63C; --good:#5CC592; --warn:#F0A35E; --warn-soft:#3A2817; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#0F1514; --surface:#18211F; --sunk:#111917; --ink:#E8EEEC; --muted:#9BABA8; --line:#2C3936;
+  --accent:#8AA6FF; --accent-ink:#0B1220; --accent-soft:#1E2A4A;
+  --you:#F5C63C; --you-fill:#F5C63C; --good:#5CC592; --warn:#F0A35E; --warn-soft:#3A2817; color-scheme:dark }
+
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+body{background:var(--bg);color:var(--ink);font:400 16px/1.5 var(--body);margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:20px 56px;display:flex;flex-direction:column;gap:20px}
+h1,h2,h3{font-family:var(--display);font-weight:700;line-height:1.05;margin:0;text-wrap:balance;letter-spacing:.01em}
+h1{font-size:2.1rem;text-transform:uppercase}
+h2{font-size:1.5rem;text-transform:uppercase}
+h3{font-size:1.45rem}
+p{margin:0}
+.label{font:600 .74rem/1.2 var(--body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.muted{color:var(--muted)} .small{font-size:.875rem}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--you-fill);outline-offset:2px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:9px 14px;font-weight:600;cursor:pointer;min-height:42px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.quiet{background:transparent}
+.btn[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent)}
+select,input[type=text]{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:9px 10px;min-height:42px;width:100%}
+
+header.top{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end;justify-content:space-between;border-bottom:3px solid var(--ink);padding-bottom:14px}
+header.top p{max-width:56ch}
+.top-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+.banner{background:var(--accent-soft);border-left:4px solid var(--accent);padding:12px 14px;display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between}
+.banner p{min-width:0;flex:1 1 280px}
+
+.grid{display:grid;grid-template-columns:minmax(0,370px) minmax(0,1fr);gap:28px;align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}}
+.rail{display:flex;flex-direction:column;gap:22px;min-width:0}
+.panel{display:flex;flex-direction:column;gap:12px;min-width:0}
+.panel + .panel{border-top:1px solid var(--line);padding-top:20px}
+
+/* profile */
+.arch{font:700 1.9rem/1 var(--display);text-transform:uppercase}
+.axis{display:grid;grid-template-columns:1fr;gap:3px}
+.axis .ends{display:flex;justify-content:space-between;gap:8px;font-size:.8rem;color:var(--muted)}
+.track{position:relative;height:10px;background:var(--sunk);border:1px solid var(--line);border-radius:5px}
+.track .you{position:absolute;top:50%;width:14px;height:14px;background:var(--you-fill);border:2px solid var(--ink);transform:translate(-50%,-50%) rotate(45deg)}
+.track .gym{position:absolute;top:50%;width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);transform:translate(-50%,-50%)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:.8rem;font-weight:600;padding:3px 9px;border-radius:99px;border:1px solid var(--line);background:var(--surface);white-space:nowrap}
+.chip.warn{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+.chip.cat{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+/* location */
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row > *{flex:1 1 140px;min-width:0}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.check{display:flex;gap:8px;align-items:center;font-weight:500}
+.check input{width:20px;height:20px;accent-color:var(--accent)}
+.note{font-size:.875rem;color:var(--muted)}
+.note.err{color:var(--warn);font-weight:500}
+
+.map{background:var(--sunk);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;max-width:100%}
+.map svg{display:block;width:100%;height:auto;cursor:crosshair}
+.map .road{stroke:var(--line);stroke-width:5;fill:none;stroke-linecap:round}
+.map .roadlbl{font:600 10px var(--body);fill:var(--muted)}
+.map .ring{fill:var(--you-fill);fill-opacity:.1;stroke:var(--you);stroke-dasharray:4 4;stroke-width:1.5}
+.map .pin circle{fill:var(--accent);stroke:var(--surface);stroke-width:2}
+.map .pin.out circle{fill:var(--muted)}
+.map .pin text{font:700 10px var(--body);fill:var(--accent-ink);text-anchor:middle;dominant-baseline:central;pointer-events:none}
+.map .pin{cursor:pointer}
+.map .me{fill:var(--you-fill);stroke:var(--ink);stroke-width:2}
+.map .lead{stroke:var(--muted);stroke-width:1}
+
+/* list */
+.list{display:flex;flex-direction:column;gap:14px;min-width:0}
+.listhead{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.card.out{background:transparent;border-style:dashed}
+.cardtop{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:start}
+.rank{font:700 1.5rem/1 var(--display);width:38px;height:38px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center}
+.card.out .rank{background:var(--muted)}
+.score{text-align:right;font-variant-numeric:tabular-nums}
+.score b{font:700 2rem/1 var(--display)}
+.facts{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:.9rem;font-variant-numeric:tabular-nums}
+.facts span b{font-weight:600}
+.why{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px 24px}
+.why ul{margin:4px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.why .good .label{color:var(--good)} .why .bad .label{color:var(--warn)}
+.cardacts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.cardacts .sp{flex:1}
+details.more{border-top:1px solid var(--line);padding-top:10px}
+details.more summary{cursor:pointer;font-weight:600}
+.moregrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px 28px;margin-top:12px}
+.moregrid > div{display:flex;flex-direction:column;gap:8px;min-width:0}
+.bars{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:5px 8px;align-items:center;font-size:.85rem}
+.bar{height:8px;background:var(--sunk);border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.tag{font-size:.72rem;font-weight:700;color:var(--you);text-transform:uppercase;letter-spacing:.06em}
+.legend{display:flex;gap:14px;font-size:.8rem;color:var(--muted);align-items:center}
+.legend i{display:inline-block;width:10px;height:10px;margin-right:5px;vertical-align:-1px}
+.legend .ly{background:var(--you-fill);border:1.5px solid var(--ink);transform:rotate(45deg)}
+.legend .lg{background:var(--accent);border-radius:50%}
+ol.plain,ul.plain{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.src{font-size:.8rem;overflow-wrap:anywhere}
+
+/* agent */
+.agent{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.agent .out{white-space:pre-wrap;overflow-wrap:anywhere}
+.agent .ask{display:flex;gap:8px;flex-wrap:wrap}
+.agent .ask input{flex:1 1 220px;width:auto}
+
+/* quiz */
+.quiz{max-width:720px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:20px}
+.prog{height:8px;background:var(--sunk);border-radius:4px;overflow:hidden}
+.prog i{display:block;height:100%;background:var(--accent);transition:width .2s}
+@media (prefers-reduced-motion:reduce){.prog i{transition:none}}
+.q{font:700 2rem/1.1 var(--display);text-wrap:balance}
+.opts{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.opt{text-align:left;border:2px solid var(--line);background:var(--surface);border-radius:var(--r);padding:18px;cursor:pointer;font-size:1.05rem;font-weight:500;min-height:92px}
+.opt:hover{border-color:var(--accent)}
+.opt.sel{border-color:var(--accent);background:var(--accent-soft)}
+.quiznav{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+
+.feedback{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px}
+textarea.copybox{width:100%;min-height:120px;font:.85rem/1.4 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);background:var(--sunk);color:var(--ink);border-radius:var(--r);padding:10px}
+footer{font-size:.85rem;color:var(--muted);border-top:1px solid var(--line);padding-top:14px;max-width:80ch}
+
+/* ---------- App shell additions: location bar, tabs, live map, nearby search, shortlist ---------- */
+input[type=search],input[type=date],textarea.notes{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:9px 10px;min-height:42px;width:100%}
+textarea.notes{min-height:76px;font:inherit;resize:vertical}
+.locbar{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+.locnow{display:flex;gap:6px 10px;align-items:baseline;flex-wrap:wrap}
+.locnow b{font:700 1.35rem/1.1 var(--display);text-transform:uppercase;overflow-wrap:anywhere}
+.addr{display:flex;gap:8px;flex:2 1 300px;min-width:0}
+.addr input{flex:1 1 auto;min-width:0}
+.addr .btn{flex:0 0 auto}
+.limrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));gap:8px 12px;align-items:end}
+
+.tabs{min-width:0;display:flex;gap:2px;border-bottom:2px solid var(--line);overflow-x:auto;position:sticky;top:0;background:var(--bg);z-index:1000;scrollbar-width:none}
+.tab{border:0;background:none;padding:12px 14px;font:700 1.1rem/1 var(--display);text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-2px;cursor:pointer;white-space:nowrap;min-height:46px}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tab .n{display:inline-block;min-width:1.4em;padding:1px 5px;margin-left:4px;border-radius:99px;background:var(--sunk);font:600 .75rem/1.4 var(--body);text-align:center}
+.tabpanel{display:flex;flex-direction:column;gap:16px;min-width:0}
+.tabpanel[hidden]{display:none}
+
+.leaf{height:min(66vh,620px);min-height:340px;border:1px solid var(--line);border-radius:var(--r);background:var(--sunk);z-index:0}
+.maptools{display:flex;gap:8px 14px;flex-wrap:wrap;align-items:center}
+.maptools .legend{flex-wrap:wrap}
+.lpin{width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--accent-ink);border:2px solid #fff;font:700 12px/1 var(--body);display:grid;place-items:center;box-shadow:0 1px 4px rgba(0,0,0,.45)}
+.lpin.out{background:#7D8A88;color:#fff;width:20px;height:20px}
+.lpin.osm{width:16px;height:16px;background:#fff;border:4px solid var(--good)}
+.lpin.osm.saved{background:var(--you-fill)}
+.lyou{width:20px;height:20px;background:var(--you-fill);border:2px solid #14201F;transform:rotate(45deg);box-shadow:0 1px 4px rgba(0,0,0,.45)}
+.legend .lo{background:#fff;border:3px solid var(--good);border-radius:50%;width:12px;height:12px}
+.legend .lx{background:#7D8A88;border-radius:50%}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--surface);color:var(--ink)}
+.leaflet-popup-content{font:400 14px/1.45 var(--body);margin:12px 14px;display:flex;flex-direction:column;gap:6px;min-width:200px}
+.leaflet-popup-content h3{font-size:1.2rem}
+.leaflet-popup-content .btn{min-height:36px;padding:6px 10px;font-size:.9rem}
+.leaflet-container a.btn{color:inherit;text-decoration:none}
+.leaflet-container a.btn.primary{color:var(--accent-ink)}
+.picking .leaf{cursor:crosshair}
+
+.places{display:flex;flex-direction:column;gap:10px;min-width:0}
+.place{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.place .ptop{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.place h3{font-size:1.3rem;overflow-wrap:anywhere}
+.place .dist{text-align:right;flex:0 0 auto;font-variant-numeric:tabular-nums}
+.place .dist b{font:700 1.4rem/1 var(--display)}
+.place .acts{display:flex;flex-wrap:wrap;gap:8px}
+.place .acts .btn,.place .acts a.btn{min-height:38px;padding:7px 12px;font-size:.92rem;text-decoration:none;color:inherit;display:inline-flex;align-items:center}
+.chip.good{border-color:var(--good);color:var(--good)}
+.chip.you{border-color:var(--you);color:var(--you)}
+.filters{display:flex;gap:6px;flex-wrap:wrap}
+.filters .chip{cursor:pointer;min-height:34px;padding:6px 12px;font-size:.85rem}
+.filters .chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.sorter{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sorter select{width:auto}
+
+.tour{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px 24px}
+.tour > div{display:flex;flex-direction:column;gap:8px;min-width:0}
+.tour ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.tour li label{display:flex;gap:8px;align-items:flex-start}
+.tour li input{width:18px;height:18px;margin-top:3px;flex:0 0 auto;accent-color:var(--accent)}
+.stars{display:flex;gap:4px;flex-wrap:wrap}
+.stars .btn{min-height:36px;min-width:42px;padding:4px 8px}
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:var(--r);padding:20px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp 0.8s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+@media (max-width:600px){ h1{font-size:1.7rem} .q{font-size:1.6rem} .tab{padding:12px 9px;font-size:1rem;flex:1 1 auto} }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Cowtown Gym Match</h1>
+      <p class="muted">New to Fort Worth? Find the gym that fits how you train, see what else is near your new place, and plan your tours.</p>
+    </div>
+    <div class="top-actions">
+      <button class="btn primary" id="btn-quiz">Take the 2-minute quiz</button>
+    </div>
+  </header>
+
+  <section id="view-quiz" class="quiz" hidden aria-live="polite"></section>
+
+  <div id="view-main" class="wrap" style="padding:0;gap:16px;width:100%">
+    <div class="banner" id="banner"></div>
+
+    <section class="locbar" id="where" aria-label="Where you'll train from">
+      <div class="locnow"><span class="label">Starting from</span><b id="loc-label"></b></div>
+      <div class="row">
+        <button class="btn" id="btn-geo" style="flex:0 1 auto">Use my location</button>
+        <form class="addr" id="addr-form" role="search">
+          <input type="search" id="addr" placeholder="Your new address, apartment, or office" aria-label="Address to start from" autocomplete="street-address">
+          <button class="btn" type="submit">Go</button>
+        </form>
+        <div class="field" style="flex:1 1 180px"><select id="sel-area" aria-label="Or pick a Fort Worth area"></select></div>
+      </div>
+      <p class="note" id="geo-note" aria-live="polite">Distances measure from here. Use your location, type an address, pick an area, or drop a pin on the map.</p>
+      <div class="limrow">
+        <div class="field"><label class="label" for="sel-dist">Max distance</label>
+          <select id="sel-dist"><option value="3">3 miles</option><option value="5">5 miles</option><option value="8">8 miles</option><option value="12">12 miles</option><option value="99">Any distance</option></select></div>
+        <div class="field"><label class="label" for="sel-budget">Monthly budget</label>
+          <select id="sel-budget"><option value="30">Up to $30</option><option value="60">Up to $60</option><option value="100">Up to $100</option><option value="200">Up to $200</option><option value="9999">No limit</option></select></div>
+        <label class="check" for="chk-24" style="min-height:42px"><input type="checkbox" id="chk-24"> I need 24/7 access</label>
+      </div>
+    </section>
+
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" id="t-matches" aria-controls="tab-matches" data-tab="matches">Matches</button>
+      <button class="tab" role="tab" id="t-map" aria-controls="tab-map" data-tab="map">Map</button>
+      <button class="tab" role="tab" id="t-nearby" aria-controls="tab-nearby" data-tab="nearby">Nearby</button>
+      <button class="tab" role="tab" id="t-short" aria-controls="tab-short" data-tab="short">Saved <span class="n" id="short-n">0</span></button>
+    </nav>
+
+    <!-- Matches: profile + ranked dossier gyms -->
+    <section class="tabpanel" id="tab-matches" role="tabpanel" aria-labelledby="t-matches">
+      <div class="grid">
+        <aside class="rail"><section class="panel" id="profile"></section></aside>
+        <div class="list">
+          <div class="agent" id="agent" hidden>
+            <div><h2>Ask the matching agent</h2>
+              <p class="small muted">Claude reads your profile and the gym dossiers, then explains the trade-offs. It uses your own Claude account and asks before the first question.</p></div>
+            <div class="ask">
+              <button class="btn primary" id="btn-explain">Explain my top 3</button>
+              <input type="text" id="agent-q" placeholder="Or ask: I train at 5am, which of these still works?" aria-label="Question for the matching agent">
+              <button class="btn" id="btn-ask">Ask</button>
+              <button class="btn quiet" id="btn-stop" hidden>Stop</button>
+            </div>
+            <div class="out" id="agent-out" aria-live="polite"></div>
+          </div>
+          <div class="listhead">
+            <h2 id="list-title">Your matches</h2>
+            <button class="btn" id="btn-short" aria-pressed="false">Shortlist only</button>
+          </div>
+          <div id="cards" class="list"></div>
+          <div id="outs" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Map: live map of matches, discovered gyms and your start point -->
+    <section class="tabpanel" id="tab-map" role="tabpanel" aria-labelledby="t-map" hidden>
+      <div class="maptools">
+        <button class="btn" id="btn-pick" aria-pressed="false">Drop a pin</button>
+        <button class="btn" id="btn-map-find">Show other gyms near me</button>
+        <div class="legend">
+          <span><i class="ly"></i>You</span><span><i class="lg"></i>Vibe match (by rank)</span><span><i class="lx"></i>Breaks a limit</span><span><i class="lo"></i>Other gyms, not rated yet</span>
+        </div>
+      </div>
+      <div class="leaf" id="leaf" role="region" aria-label="Map of gyms"></div>
+      <p class="note" id="map-note">Drag the yellow diamond, or use Drop a pin, to move your starting point. The ring shows your max distance.</p>
+    </section>
+
+    <!-- Nearby: every gym OpenStreetMap knows about around the start point -->
+    <section class="tabpanel" id="tab-nearby" role="tabpanel" aria-labelledby="t-nearby" hidden>
+      <div class="listhead">
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:0;flex:1 1 300px">
+          <h2>Gyms near you</h2>
+          <p class="small muted">Every gym, studio, and box OpenStreetMap lists within your max distance, including ones we haven't rated yet. Rated gyms show your vibe match.</p>
+        </div>
+        <button class="btn primary" id="btn-find">Find gyms near me</button>
+      </div>
+      <div class="filters" id="filters" role="group" aria-label="Filter by type"></div>
+      <div class="sorter"><label class="label" for="sel-sort">Sort</label>
+        <select id="sel-sort"><option value="dist">Closest first</option><option value="match">Best vibe match first</option><option value="name">A to Z</option></select>
+        <span class="note" id="near-note" aria-live="polite"></span></div>
+      <div class="places" id="places"></div>
+    </section>
+
+    <!-- Shortlist: tour planner -->
+    <section class="tabpanel" id="tab-short" role="tabpanel" aria-labelledby="t-short" hidden>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <h2>Your tour plan</h2>
+        <p class="small muted">Gyms you saved, closest first. Tick off questions on your tour, jot what you noticed, and rate how it felt.</p>
+      </div>
+      <div class="places" id="shortlist"></div>
+      <section class="feedback" id="feedback">
+        <h2>Help test this tool</h2>
+        <p class="small muted">This is an early prototype. Answer two questions, copy the summary, and send it back to whoever shared this page with you.</p>
+        <div class="row">
+          <div class="field"><label class="label" for="fb-how">How did you find this?</label>
+            <select id="fb-how"><option value="">Choose one</option><option>A friend or coworker</option><option>Social media post</option><option>Apartment leasing office</option><option>Realtor</option><option>Employer or relocation team</option><option>A gym</option><option>Other</option></select></div>
+          <div class="field"><label class="label" for="fb-pay">Would you pay for this?</label>
+            <select id="fb-pay"><option value="">Choose one</option><option>No, only if it's free</option><option>Yes, a one-time fee under $10</option><option>Yes, a small subscription</option><option>Not sure</option></select></div>
+        </div>
+        <div class="row"><button class="btn primary" id="btn-copy" style="flex:0 1 auto">Copy my summary</button><span class="note" id="copy-note" style="align-self:center"></span></div>
+        <textarea class="copybox" id="copybox" readonly aria-label="Your summary" hidden></textarea>
+      </section>
+    </section>
+
+    <footer>Vibe dossiers are seeded from gym websites, press, and reviews and have not been checked in person yet. Vibe scores are first estimates, and prices and hours change, so confirm on a tour. Distances are straight-line miles and drive times are rough. Nearby gym listings come from OpenStreetMap contributors and may be incomplete. Map tiles &copy; OpenStreetMap contributors &copy; CARTO.</footer>
+  </div>
+</div>
+
+<script id="core">
+/* ---------- Core: data + scoring. No DOM in this block so it can be tested on its own. ---------- */
+var AXES = [
+  {id:'vis', lo:'Private', hi:'Camera-friendly', name:'Visibility'},
+  {id:'energy', lo:'Quiet, focused', hi:'Loud, high-energy', name:'Energy'},
+  {id:'structure', lo:'Open floor', hi:'Coached classes', name:'Structure'},
+  {id:'social', lo:'Solo', hi:'Community', name:'Social style'}
+];
+var FOCUS = {s:'Strength', f:'Functional movement', c:'Conditioning', r:'Recovery'};
+var AES = {phys:'Physique', perf:'Performance', well:'Wellness'};
+
+var QUESTIONS = [
+  {axis:'vis', q:'Someone sets up a tripod two racks down.', a:"Good for them. I might film my own top set.", b:"I'd rather train where that isn't normal."},
+  {axis:'energy', q:'You walk in at 6pm. What do you want to hear?', a:'Music loud enough to feel, and heavy weight moving.', b:'Low volume, with room to think between sets.'},
+  {axis:'structure', q:'Your best sessions happen when', a:'A coach has written the workout and runs the clock.', b:'I follow my own program at my own pace.'},
+  {axis:'social', q:'Six months in, you would like', a:"To know most people's names in the room.", b:'To nod at the regulars and keep my headphones in.'},
+  {axis:'vis', q:'The mirrors and lighting at a gym are', a:'Part of the appeal. I want to see and show my progress.', b:"Beside the point. I'd take bare walls."},
+  {axis:'energy', q:'A lifter nearby yells through a PR attempt.', a:'That fires me up.', b:'That pulls me out of my session.'},
+  {axis:'structure', q:'You would rather pay for', a:'Unlimited classes on a set schedule.', b:'A key fob and open access.'},
+  {axis:'social', q:'The gym posts a Saturday team workout and cookout.', a:"I'm in.", b:"I'll train at my usual time instead."},
+  {axis:'vis', q:"Your ideal gym's Instagram is", a:'Active, and members get reposted.', b:'Barely there. What happens inside stays inside.'},
+  {axis:'energy', q:'Pick a room.', a:'Dark, colored LEDs, big sound system.', b:'Daylight or plain overheads. Nothing staged.'},
+  {axis:'structure', q:'If your form slips', a:'I want a coach to step in and fix it.', b:"I'll film it and sort it out myself."},
+  {axis:'social', q:'Between sets', a:'I like to talk.', b:'I like to be left alone.'},
+  {pick:'focus1', q:'Which session would you miss most if it disappeared?', opts:[
+    ['s','Heavy barbell work: squat, bench, deadlift.'],['f','Functional movement: kettlebells, gymnastics, carries.'],
+    ['c','Conditioning: intervals, sleds, rowing, sweat.'],['r','Recovery: sauna, cold plunge, stretching.']]},
+  {pick:'focus2', q:'And your second pick?', opts:[
+    ['s','Heavy barbell work: squat, bench, deadlift.'],['f','Functional movement: kettlebells, gymnastics, carries.'],
+    ['c','Conditioning: intervals, sleds, rowing, sweat.'],['r','Recovery: sauna, cold plunge, stretching.']]},
+  {pick:'aes1', q:'What does progress look like to you?', opts:[
+    ['phys','How I look: size, leanness, symmetry.'],['perf','Numbers: more weight, faster times.'],['well','How I feel: sleep, energy, stress.']]},
+  {pick:'aes2', q:'Which wall would you rather train in front of?', opts:[
+    ['phys','A posing mirror with stage lighting.'],['perf','A whiteboard of member PRs and a chalk bucket.'],['well','Plants, natural light, and a tea station.']]}
+];
+
+/* Answers -> profile. Axis value = share of "a" answers (0, .33, .67, 1). Focus: first pick .65, second .35. */
+function buildProfile(ans){
+  var p = {vis:0,energy:0,structure:0,social:0, focus:{s:0,f:0,c:0,r:0}, aes:{phys:0,perf:0,well:0}};
+  var n = {vis:0,energy:0,structure:0,social:0};
+  QUESTIONS.forEach(function(q,i){
+    var v = ans[i];
+    if(q.axis){ n[q.axis]++; if(v==='a') p[q.axis]++; }
+    else if(q.pick==='focus1') p.focus[v] += .65;
+    else if(q.pick==='focus2') p.focus[v] += .35;
+    else p.aes[v] += .5;
+  });
+  AXES.forEach(function(a){ p[a.id] = Math.round(p[a.id]/n[a.id]*100)/100; });
+  return p;
+}
+
+var GYMS = [
+ {id:'ar', name:'Absolute Recomp Fort Worth', cat:'Premium strength', kind:'gym', addr:'4931 Overton Ridge Blvd, Fort Worth, TX 76132', lat:32.676, lon:-97.402,
+  price:65, priceNote:'$65 to $80 a month, per a 2026 company press release', h24:true, hours:'Open and staffed 24/7, no holiday closures',
+  vis:.95, energy:.9, structure:.1, social:.45, focus:{s:.95,f:.3,c:.35,r:.35}, aes:{phys:.95,perf:.6,well:.15},
+  notes:{vis:'Pro-style posing room with custom lighting, and filming is part of the culture.', energy:'LED lighting, big screens, and a charged floor by design.',
+   structure:'Open floor with 400-plus pieces of equipment. Personal training is available, but there are no group classes.', social:'Lounge and retail shop give people a place to hang around, but most members train on their own plan.',
+   focus:'Built for strength: powerlifting platforms, many cable towers, dumbbells to 350 lb.', aes:'Physique-first. The gym markets body recomposition and bodybuilding prep.'},
+  ask:['What are the filming rules on the main floor versus the posing room?','How crowded are the platforms at 5 to 7pm?','Which membership tier includes guest passes?'],
+  site:'https://absoluterecompgyms.com/fort-worth-tx/', src:['https://absoluterecompgyms.com/','https://www.webull.com/news/15311192928183296']},
+ {id:'ge', name:'Gym Evolution', cat:'Hardcore strength', kind:'gym', addr:'606 Grace Ave, Fort Worth, TX 76111', lat:32.772, lon:-97.303,
+  price:40, priceNote:'From $39.99 a month, no contract, per a business listing', h24:true, hours:'Open 24/7, 365 days a year',
+  vis:.6, energy:.75, structure:.25, social:.55, focus:{s:.9,f:.45,c:.45,r:.1}, aes:{phys:.75,perf:.7,well:.1},
+  notes:{vis:'Bodybuilders and competitors train here, so cameras are likely tolerated. Confirm the policy.', energy:'Describes itself as a hardcore gym.',
+   structure:'Mostly open floor. Seasonal bootcamps and personal training are add-ons.', social:'Welcomes beginners alongside athletes and competitors.',
+   focus:'Free weights and machines first, with space for HIIT and functional work.', aes:'Split between physique and performance, with competition prep on offer.'},
+  ask:['Is there a filming policy?','What does the floor feel like at midnight versus 6pm?','Is competition prep coaching a separate fee?'],
+  site:'https://lantern.llc/b/gym-evolution-fort-worth/book', src:['https://lantern.llc/b/gym-evolution-fort-worth/book']},
+ {id:'sp', name:'Strong Performance Co.', cat:'Strength and boxing', kind:'gym', addr:'2207 8th Ave, Fort Worth, TX 76110', lat:32.720, lon:-97.343,
+  price:50, priceNote:'Open gym $50 a month or $400 a year, per a business listing', h24:null, hours:'Hours not confirmed',
+  vis:.4, energy:.5, structure:.45, social:.6, focus:{s:.8,f:.5,c:.65,r:.3}, aes:{phys:.3,perf:.85,well:.3},
+  notes:{vis:'No sign of a content culture online. Likely neutral.', energy:'Modern, climate-controlled space. Energy level needs a visit to judge.',
+   structure:'Open gym memberships plus boxing classes and personal training, so you can mix both.', social:'Small gym in Fairmount with coaches on the floor.',
+   focus:'Squat racks and strength zones, a boxing area, and a recovery corner.', aes:'Performance-minded: lifting and boxing skill over looks.'},
+  ask:['What are staffed hours and is there after-hours access?','How busy are the racks after work?','Can open gym members drop into boxing classes?'],
+  site:'https://magicpin.com/usa/Fort-Worth/Fairmount/Fitness/Strong-Performance-Co./store/25a8934/', src:['https://magicpin.com/usa/Fort-Worth/Fairmount/Fitness/Strong-Performance-Co./store/25a8934/'], dayPass:true},
+ {id:'ff', name:'Forged Fitness', cat:'Small-group strength', kind:'gym', addr:'3000 Shotts St, Fort Worth, TX 76107', lat:32.756, lon:-97.357,
+  price:null, priceNote:'Price not confirmed', h24:null, hours:'Hours not confirmed',
+  vis:.3, energy:.55, structure:.7, social:.8, focus:{s:.75,f:.65,c:.55,r:.1}, aes:{phys:.25,perf:.8,well:.35},
+  notes:{vis:'Nothing online suggests a filming culture.', energy:'Small-group sessions set the pace. Expect a working buzz more than a show.',
+   structure:'Small-group training classes are the core, with open gym as an option.', social:'Listings stress a supportive member community and trainers who know you.',
+   focus:'Strength and conditioning programs scaled to each person.', aes:'Performance and accountability over appearance.'},
+  ask:['How many people are in a typical small-group session?','Can I use open gym on days I skip class?','What does the monthly rate include?'],
+  site:'https://lantern.llc/b/forged-fitness-fort-worth/book', src:['https://lantern.llc/b/forged-fitness-fort-worth/book']},
+ {id:'pg', name:"Pop's Gym", cat:'Boutique neighborhood gym', kind:'gym', addr:'3212 Collinsworth St, Fort Worth, TX', lat:32.757, lon:-97.361,
+  price:null, priceNote:'Price not confirmed', h24:true, hours:'24/7 member access, per a local guide',
+  vis:.3, energy:.4, structure:.35, social:.75, focus:{s:.6,f:.65,c:.5,r:.1}, aes:{phys:.2,perf:.6,well:.5},
+  notes:{vis:'Small and local. No content culture found online.', energy:'A small room, so it is unlikely to be loud. Confirm on a visit.',
+   structure:'Open access with personal training as an add-on.', social:'Local guides describe it as supportive and community-oriented.',
+   focus:'General strength plus an outdoor obstacle course.', aes:'Neighborhood feel, somewhere between performance and wellness.'},
+  ask:['How much barbell equipment is there, and how often is it taken?','What is the outdoor course used for?','Is 24/7 access included in the base rate?'],
+  site:'https://6amcity.com/tx/fort-worth/live/gyms-workout-classes-fort-worth-tx', src:['https://ftwtoday.6amcity.com/city-guide/live/gyms-workout-classes-fort-worth-tx','https://www.dallasites101.com/blog/post/weight-lifting-gyms-in-dfw/']},
+ {id:'pc', name:'CrossFit Panther City', cat:'CrossFit', kind:'gym', addr:'7400 Oakmont Blvd #100, Fort Worth, TX 76132', lat:32.661, lon:-97.421,
+  price:null, priceNote:'Price not confirmed', h24:false, hours:'Class schedule. Confirm times',
+  vis:.35, energy:.8, structure:.95, social:.95, focus:{s:.6,f:.95,c:.85,r:.1}, aes:{phys:.15,perf:.95,well:.25},
+  notes:{vis:'CrossFit boxes film lifts for coaching more than for content.', energy:'Group classes on a clock with music.',
+   structure:'Coach-led classes are the product.', social:'The gym says it commits to working as hard as you do, which is typical of a tight CrossFit community.',
+   focus:'Functional movement and conditioning, with barbell work inside the class.', aes:'Performance. The whiteboard matters more than the mirror.'},
+  ask:['Is there open gym time for my own lifting?','What is the on-ramp for someone new to CrossFit?','How big are the 5:30pm classes?'],
+  site:'https://www.wodify.com/blog/top-crossfit-gyms-in-fort-worth', src:['https://www.wodify.com/blog/top-crossfit-gyms-in-fort-worth']},
+ {id:'ih', name:'CrossFit Iron Horse', cat:'CrossFit', kind:'gym', addr:'5220 W Vickery Blvd, Fort Worth, TX 76107', lat:32.719, lon:-97.401,
+  price:null, priceNote:'Price not confirmed', h24:false, hours:'Classes plus open gym from 5am on weekdays. Confirm times',
+  vis:.35, energy:.75, structure:.9, social:.9, focus:{s:.65,f:.95,c:.85,r:.1}, aes:{phys:.15,perf:.95,well:.25},
+  notes:{vis:'Lifts get filmed for feedback, not for an audience.', energy:'Group classes with a clock running.',
+   structure:'Coach-led classes, with open gym hours listed as well.', social:'Promotes its coaches and community as what sets it apart.',
+   focus:'Functional movement and conditioning in a climate-controlled box.', aes:'Performance.'},
+  ask:['Which hours are open gym and are they included?','Do you run a beginner course?','Is the air conditioning as good as advertised in August?'],
+  site:'https://morningchalkup.com/2024/08/05/places-to-work-out-fort-texas-2024-crossfit-games/', src:['https://morningchalkup.com/2024/08/05/places-to-work-out-fort-texas-2024-crossfit-games/','https://www.wodify.com/blog/top-crossfit-gyms-in-fort-worth']},
+ {id:'bm', name:'Body Machine Fitness', cat:'HIIT studio', kind:'gym', addr:'2300 W 7th St, Suite 100, Fort Worth, TX 76107', lat:32.7505, lon:-97.350,
+  price:null, priceNote:'Price not confirmed. Reviewers call it pricey, with a student discount', h24:false, hours:'Class schedule only',
+  vis:.6, energy:1, structure:1, social:.75, focus:{s:.45,f:.5,c:.95,r:.1}, aes:{phys:.45,perf:.55,well:.4},
+  notes:{vis:'A staged, photogenic room. Check whether phones are welcome during class.', energy:'Music, lights, and movement are synchronized. Reviewers compare it to a nightclub.',
+   structure:'45-minute coached classes only.', social:'Reviewers describe a welcoming community and coaches who never judge.',
+   focus:'Conditioning first, mixing running and lifting.', aes:'A mix: sweat, community, and looking good doing it.'},
+  ask:['What does an unlimited membership cost?','How heavy does the lifting portion get?','Is there a first-class deal?'],
+  site:'https://bestprosintown.com/tx/fort-worth/body-machine-fitness-fort-worth-', src:['https://bestprosintown.com/tx/fort-worth/body-machine-fitness-fort-worth-','https://trustanalytica.org/us/tx/fort-worth/best-fitness-centers']},
+ {id:'sg', name:'SPENGA Fort Worth', cat:'Spin, strength, and yoga classes', kind:'gym', addr:'3100 S Hulen St, Fort Worth, TX', lat:32.709, lon:-97.389,
+  price:null, priceNote:'Price not confirmed', h24:false, hours:'Class schedule only',
+  vis:.4, energy:.8, structure:1, social:.7, focus:{s:.35,f:.45,c:.85,r:.45}, aes:{phys:.3,perf:.4,well:.7},
+  notes:{vis:'Studio classes. Filming during class is unlikely.', energy:'Music-driven group sessions.',
+   structure:'Every session is a coached class that combines spin, strength, and yoga.', social:'Class regulars get to know each other.',
+   focus:'Cardio-led, with light strength and a yoga finish that doubles as recovery.', aes:'Balanced, whole-body wellness.'},
+  ask:['How long is each of the three segments?','What weights are available in the strength block?','Is there an intro offer?'],
+  site:'https://classpass.com/search/fort-worth/bootcamp', src:['https://classpass.com.es/search/fort-worth/bootcamp']},
+ {id:'lt', name:'Life Time Fort Worth-Alliance', cat:'Athletic country club', kind:'gym', addr:'10761 Founders Way, Fort Worth, TX 76177', lat:32.9303, lon:-97.3146,
+  price:199, priceNote:'Signature membership listed at $199 a month by a third-party directory', h24:false, hours:'Opens at 4am daily. Confirm closing time',
+  vis:.45, energy:.5, structure:.55, social:.55, focus:{s:.65,f:.6,c:.75,r:.8}, aes:{phys:.4,perf:.5,well:.85},
+  notes:{vis:'A family resort setting. Expect limits on filming around pools and kids areas.', energy:'Large and polished, with different energy in each zone.',
+   structure:'Over 100 studio classes a week plus a full open floor.', social:'Clubs, courts, a cafe, and kids programs. As social as you make it.',
+   focus:'Does everything, and adds pools, a spa, and a dedicated recovery and performance area.', aes:'Wellness and lifestyle first.'},
+  ask:['Which membership tier includes the classes and recovery area I want?','How long is the wait for racks in the evening?','What are the joining fee and contract terms?'],
+  site:'https://www.lifetime.life/locations/tx/fort-worth-alliance.html', src:['https://news.lifetime.life/2018-06-12-Life-Time-Set-to-Open-Massive-First-of-its-Kind-Athletic-Lifestyle-Resort-in-Fort-Worth-Grand-Opening-Celebration-on-June-12-All-Member-Opening-at-4-00-a-m-on-June-15','https://threebestrated.com/gyms-in-fort-worth-tx']},
+ {id:'eo', name:'EoS Fitness Altamesa', cat:'Big-box', kind:'gym', addr:'3560 Altamesa Blvd, Fort Worth, TX 76133', lat:32.6487, lon:-97.358,
+  price:25, priceNote:'Memberships start at $24.99 a month, per the gym', h24:true, hours:'Open 24/7',
+  vis:.5, energy:.6, structure:.4, social:.3, focus:{s:.65,f:.4,c:.7,r:.35}, aes:{phys:.5,perf:.4,well:.3},
+  notes:{vis:'A big floor where nobody much minds a phone on a tripod. Confirm the policy.', energy:'A busy commercial gym with bold branding.',
+   structure:'Open floor plus a full group class schedule, including cycling, yoga, and Les Mills.', social:'Large and anonymous. Easy to keep to yourself.',
+   focus:'A broad equipment mix for strength and cardio.', aes:'General fitness with no strong identity.'},
+  ask:['Which tier includes classes and recovery amenities?','How many squat racks and platforms are there?','Is the free 7-day pass still offered?'],
+  site:'https://eosfitness.com/gym/fort-worth-altamesa-blvd-mccart-ave', src:['https://eosfitness.com/gym/fort-worth-altamesa-blvd-mccart-ave'], dayPass:true},
+ {id:'pf', name:'Planet Fitness Wedgwood', cat:'Big-box, budget', kind:'gym', addr:'5334 Trail Lake Dr, Fort Worth, TX 76133', lat:32.668, lon:-97.375,
+  price:15, priceNote:'Classic membership $15 a month, per a local directory', h24:null, hours:'Hours not confirmed. Many locations run 24 hours',
+  vis:.1, energy:.15, structure:.1, social:.15, focus:{s:.3,f:.2,c:.65,r:.3}, aes:{phys:.15,perf:.15,well:.55},
+  notes:{vis:'The chain sells itself as judgement-free. Filming others is out of place here.', energy:'Members describe lower lighting and a quiet, clean room.',
+   structure:'Open floor. No coached classes in the usual sense.', social:'Friendly staff, and members keep to themselves.',
+   focus:'Cardio and machines. The chain is not built around barbells.', aes:'Low-pressure general fitness.'},
+  ask:['Is there any free-weight barbell setup, or only Smith machines?','Is this location open 24 hours?','What does the higher tier add here?'],
+  site:'https://www.planetfitness.com/clubs/tx/fort-worth', src:['https://reviews.listen360.com/planet-fitness-fort-worth-wedgewood-tx','https://threebestrated.com/gyms-in-fort-worth-tx']},
+ {id:'sh', name:'SweatHouz Camp Bowie', cat:'Recovery studio', kind:'recovery', addr:'6252 Camp Bowie Blvd, Fort Worth, TX 76116', lat:32.722, lon:-97.418,
+  price:null, priceNote:'Price not confirmed', h24:false, hours:'By appointment',
+  vis:.1, energy:.1, structure:.2, social:.1, focus:{s:0,f:0,c:0,r:1}, aes:{phys:.1,perf:.3,well:.95},
+  notes:{vis:'Private suites.', energy:'Quiet by design.',
+   structure:'You book a suite and run the session at your own pace.', social:'Private. You come alone or with one guest.',
+   focus:'Infrared sauna and cold plunge in a private suite. Not a training gym, so pair it with one.', aes:'Recovery and wellness.'},
+  ask:['What does a membership cost versus single sessions?','How far ahead do evening slots book up?'],
+  site:'https://www.sweathouz.com', src:['https://www.gayout.com/usa-canada/united-states/fort-worth/saunas/sweathouz-camp-bowie-contrast-therapy-studio']},
+ {id:'cc', name:'City Cave Near Southside', cat:'Recovery and float', kind:'recovery', addr:'465 S Main St, Suite 100, Fort Worth, TX', lat:32.741, lon:-97.326,
+  price:null, priceNote:'Price not confirmed', h24:false, hours:'By appointment',
+  vis:.05, energy:.05, structure:.3, social:.15, focus:{s:0,f:0,c:0,r:1}, aes:{phys:.05,perf:.15,well:1},
+  notes:{vis:'Private rooms.', energy:'Silent. Float therapy is the headline.',
+   structure:'Booked sessions with staff setting you up.', social:'Solo or couples sessions.',
+   focus:'Float rooms, infrared sauna, and massage. Not a training gym, so pair it with one.', aes:'Wellness and nervous-system recovery.'},
+  ask:['Is there a cold plunge, or sauna and float only?','What is the intro price?'],
+  site:'https://classpass.com/search/fort-worth/float', src:['https://classpass.com.es/search/fort-worth/float']}
+];
+
+var AREAS = [
+  ['Downtown',32.7555,-97.3308],['West 7th and Cultural District',32.7510,-97.3560],['Near Southside and Fairmount',32.7300,-97.3330],
+  ['TCU and University',32.7096,-97.3628],['Arlington Heights',32.7370,-97.3800],['Clearfork and Hulen',32.7050,-97.4000],
+  ['Camp Bowie and Ridglea',32.7230,-97.4150],['Southwest and Wedgwood',32.6650,-97.3900],['Benbrook',32.6730,-97.4610],
+  ['NAS JRB and Lockheed Martin plant',32.7690,-97.4420],['North Fort Worth and Alliance',32.9100,-97.3150],['Keller and North Richland Hills',32.8800,-97.2400]
+];
+
+function miles(aLat,aLon,bLat,bLon){
+  var R=3958.8, d=Math.PI/180, dLat=(bLat-aLat)*d, dLon=(bLon-aLon)*d;
+  var x=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(aLat*d)*Math.cos(bLat*d)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return 2*R*Math.asin(Math.sqrt(x));
+}
+function driveMin(mi){ return Math.round(mi*2.9+3); }  /* straight-line miles x 1.35 road factor at ~28 mph, plus parking */
+
+/* Fit per dimension, 0..1 */
+function dimFits(p,g){
+  var out={};
+  AXES.forEach(function(a){ out[a.id]=1-Math.abs(p[a.id]-g[a.id]); });
+  var f=0,k; for(k in p.focus) f+=p.focus[k]*g.focus[k]; out.focus=f;
+  var s=0; for(k in p.aes) s+=p.aes[k]*g.aes[k]; out.aes=s;
+  return out;
+}
+/* Weights: a strong lean on an axis counts more than a split answer. Training focus counts most. */
+function dimWeights(p){
+  var w={focus:1.4, aes:.8};
+  AXES.forEach(function(a){ w[a.id]=.4+1.2*Math.abs(p[a.id]-.5); });
+  return w;
+}
+function scoreGym(p,g){
+  var f=dimFits(p,g), w=dimWeights(p), num=0, den=0, k;
+  for(k in w){ if(k==='focus') continue; num+=w[k]*f[k]; den+=w[k]; }
+  /* Atmosphere sets the base. Training focus then scales it, so a gym that can't train you the way you want can't win on mood alone. */
+  return {score:Math.round(num/den*(0.45+0.55*f.focus)*100), fits:f, weights:w};
+}
+function limitBreaks(g,dist,lim){
+  var b=[];
+  if(dist>lim.maxDist) b.push(dist.toFixed(1)+' mi is past your '+lim.maxDist+' mi limit');
+  if(g.price!=null && g.price>lim.budget) b.push('From $'+g.price+' a month, over your $'+lim.budget+' budget');
+  if(lim.need24 && g.h24!==true) b.push(g.h24===false?'Not open 24/7':'24/7 access not confirmed');
+  return b;
+}
+function rank(p,loc,lim){
+  var rows=GYMS.map(function(g){
+    var s=scoreGym(p,g), d=miles(loc.lat,loc.lon,g.lat,g.lon);
+    return {g:g, score:s.score, fits:s.fits, weights:s.weights, dist:d, breaks:limitBreaks(g,d,lim)};
+  });
+  rows.sort(function(a,b){ return (b.score-a.score)||(a.dist-b.dist); });
+  return {ok:rows.filter(function(r){return !r.breaks.length}), out:rows.filter(function(r){return r.breaks.length})};
+}
+function topKey(o){ var best=null,k; for(k in o) if(best===null||o[k]>o[best]) best=k; return best; }
+function secondKey(o){ var t=topKey(o),best=null,k; for(k in o) if(k!==t&&o[k]>0&&(best===null||o[k]>o[best])) best=k; return best; }
+function archetype(p){
+  var e = p.energy>=.6?'Loud-room':p.energy<=.4?'Quiet-room':'Any-room';
+  var n = {s:'Strength Lifter',f:'Mover',c:'Conditioning Athlete',r:'Recovery Regular'}[topKey(p.focus)];
+  return e+' '+n;
+}
+/* Reasons: best-fitting dimensions the user cares about, and the worst misfits. */
+function reasons(row){
+  var dims=['focus','aes','vis','energy','structure','social'];
+  var list=dims.map(function(d){ return {d:d, fit:row.fits[d], w:row.weights[d]}; });
+  var good=list.filter(function(x){return x.fit>=.62}).sort(function(a,b){return b.fit*b.w-a.fit*a.w}).slice(0,3);
+  var bad=list.filter(function(x){return x.fit<.5&&x.w>=.6}).sort(function(a,b){return (1-b.fit)*b.w-(1-a.fit)*a.w}).slice(0,2);
+  return {good:good.map(function(x){return row.g.notes[x.d]}), bad:bad.map(function(x){return row.g.notes[x.d]})};
+}
+if(typeof module!=='undefined') module.exports={QUESTIONS:QUESTIONS,GYMS:GYMS,AREAS:AREAS,buildProfile:buildProfile,rank:rank,scoreGym:scoreGym,miles:miles,archetype:archetype,reasons:reasons,driveMin:driveMin};
+</script>
+
+<script id="geo">
+/* ---------- Free, keyless location services. OpenStreetMap data via Nominatim (address search) and Overpass (gym discovery). ---------- */
+var OVERPASS = ['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
+var NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+var FW = {lat:32.7555, lon:-97.3308};
+
+/* OSM tags -> the categories a gym goer filters by */
+var KINDS = {gym:'Gym', functional:'CrossFit and functional', studio:'Yoga, pilates, cycling', combat:'Boxing and martial arts', climb:'Climbing', recovery:'Recovery'};
+function osmKind(t){
+  var sp=(t.sport||'').toLowerCase();
+  if(t.leisure==='sauna'||/sauna|cryo|float/.test((t.name||'').toLowerCase())) return 'recovery';
+  if(/crossfit|functional|calisthenics/.test(sp)||/crossfit/i.test(t.name||'')) return 'functional';
+  if(/climbing|bouldering/.test(sp)) return 'climb';
+  if(/boxing|martial_arts|mma|kickboxing|karate|judo|taekwondo|jiu|muay|wrestling/.test(sp)) return 'combat';
+  if(/yoga|pilates|cycling|barre|dance|aerobics/.test(sp)||/yoga|pilates|barre|cycle|spin/i.test(t.name||'')) return 'studio';
+  return 'gym';
+}
+function osmQuery(lat,lon,meters){
+  var a='(around:'+meters+','+lat.toFixed(5)+','+lon.toFixed(5)+')';
+  return '[out:json][timeout:25];('+
+    'nwr["leisure"="fitness_centre"]'+a+';'+
+    'nwr["amenity"="gym"]'+a+';'+
+    'nwr["leisure"="sports_centre"]["sport"~"fitness|crossfit|weightlifting|boxing|martial_arts|mma|yoga|pilates|climbing|cycling|kickboxing"]'+a+';'+
+    'nwr["leisure"="sauna"]'+a+';'+
+    ');out center tags 400;';
+}
+/* Overpass element -> a place a gym goer can act on. Drops unnamed and private (apartment, hotel, office) gyms. */
+function osmPlace(el,from){
+  var t=el.tags||{}, lat=el.lat!=null?el.lat:(el.center&&el.center.lat), lon=el.lon!=null?el.lon:(el.center&&el.center.lon);
+  if(lat==null||!t.name||t.access==='private'||t.access==='no') return null;
+  var street=[t['addr:housenumber'],t['addr:street']].filter(Boolean).join(' ');
+  var addr=[street,t['addr:city']].filter(Boolean).join(', ');
+  return {id:'osm:'+el.type+'/'+el.id, name:t.name, kind:osmKind(t), lat:lat, lon:lon, addr:addr,
+    hours:t.opening_hours||'', h24:/^\s*24\/7\s*$/.test(t.opening_hours||''),
+    site:t.website||t['contact:website']||'', phone:t.phone||t['contact:phone']||'',
+    dist:miles(from.lat,from.lon,lat,lon), osm:'https://www.openstreetmap.org/'+el.type+'/'+el.id};
+}
+/* Is this OSM place one of our dossier gyms? Name keyword match within 3 miles (dossier pins are hand-placed). */
+function normName(s){ return s.toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9 ]/g,' ').replace(/\b(fort worth|the|gym|fitness|co|llc)\b/g,' ').replace(/\s+/g,' ').trim(); }
+function dossierFor(pl,gyms){
+  var n=normName(pl.name);
+  for(var i=0;i<gyms.length;i++){
+    var g=gyms[i], key=normName(g.name).split(' ').slice(0,2).join(' ');
+    if(key && n.indexOf(key)>=0 && miles(pl.lat,pl.lon,g.lat,g.lon)<3) return g;
+  }
+  return null;
+}
+if(typeof module!=='undefined') module.exports.geo={osmKind:osmKind,osmPlace:osmPlace,dossierFor:dossierFor,osmQuery:osmQuery,normName:normName};
+</script>
+
+<script>
+(function(){
+var $=function(id){return document.getElementById(id)};
+function h(tag,attrs){
+  var el=document.createElement(tag),k,i;
+  for(k in (attrs||{})){ var v=attrs[k]; if(v==null||v===false) continue;
+    if(k==='text') el.textContent=v; else if(k==='class') el.className=v; else if(k.slice(0,2)==='on') el.addEventListener(k.slice(2),v); else el.setAttribute(k,v===true?'':v); }
+  for(i=2;i<arguments.length;i++){ var c=arguments[i]; if(c==null||c===false) continue;
+    if(Array.isArray(c)) c.forEach(function(x){ if(x!=null&&x!==false) el.append(x.nodeType?x:document.createTextNode(x)); });
+    else el.append(c.nodeType?c:document.createTextNode(c)); }
+  return el;
+}
+function load(k,d){ try{ var v=localStorage.getItem('cgm.'+k); return v?JSON.parse(v):d; }catch(e){ return d; } }
+function save(k,v){ try{ localStorage.setItem('cgm.'+k,JSON.stringify(v)); }catch(e){} }
+function frag(arr){ var f=document.createDocumentFragment(); arr.forEach(function(e){ if(e) f.append(e); }); return f; }
+function link(href,text,cls){ return h('a',{href:href,target:'_blank',rel:'noopener',class:cls||null,text:text}); }
+function dirUrl(lat,lon,label){
+  return 'https://www.google.com/maps/dir/?api=1&origin='+state.loc.lat.toFixed(5)+','+state.loc.lon.toFixed(5)+'&destination='+encodeURIComponent(label||(lat+','+lon));
+}
+
+var EXAMPLE={vis:.33,energy:.33,structure:0,social:.33,focus:{s:.65,f:.35,c:0,r:0},aes:{phys:0,perf:1,well:0}};
+var GENERIC_ASK=['Is there a free trial or day pass?','What is the real monthly price after any intro rate, and is there a contract?','How busy is it at the time I usually train?','Is filming allowed on the floor?','Is the equipment I care most about free at peak times?'];
+var state={
+  profile:load('profile',null),
+  loc:load('loc',{lat:AREAS[0][1],lon:AREAS[0][2],label:AREAS[0][0],example:true}),
+  lim:load('lim',{maxDist:8,budget:100,need24:false}),
+  short:load('short',[]),        /* dossier gym ids */
+  saved:load('saved',{}),        /* discovered OSM places, id -> snapshot */
+  tour:load('tour',{}),          /* id -> {q:[bool], notes, date, stars} */
+  want:load('want',{}),          /* OSM id -> name: people asking for a vibe dossier */
+  votes:load('votes',{}), shortOnly:false, quiz:null,
+  tab:load('tab','matches'), filter:'all', sort:'dist', picking:false,
+  near:{status:'idle', key:'', items:[], err:''}
+};
+function profile(){ return state.profile||EXAMPLE; }
+function inFW(){ return miles(state.loc.lat,state.loc.lon,FW.lat,FW.lon)<=45; }
+
+/* ---------- Tabs ---------- */
+function setTab(t){
+  state.tab=t; save('tab',t);
+  document.querySelectorAll('.tab').forEach(function(b){ b.setAttribute('aria-selected',b.dataset.tab===t?'true':'false'); b.tabIndex=b.dataset.tab===t?0:-1; });
+  ['matches','map','nearby','short'].forEach(function(k){ $('tab-'+k).hidden=k!==t; });
+  if(t==='map'){ initMap(); if(map){ setTimeout(function(){ map.invalidateSize(); fitMap(); },0); } }
+  if(t==='nearby' && state.near.status==='idle' && !state.loc.example) findNearby();
+  if(t==='short') renderShort();
+}
+
+/* ---------- Quiz ---------- */
+function startQuiz(){ state.quiz={i:0,ans:[]}; $('view-main').hidden=true; $('view-quiz').hidden=false; renderQuiz(); window.scrollTo(0,0); }
+function endQuiz(done){
+  if(done){ state.profile=buildProfile(state.quiz.ans); save('profile',state.profile); setTab('matches'); }
+  state.quiz=null; $('view-quiz').hidden=true; $('view-main').hidden=false; render(); window.scrollTo(0,0);
+}
+function renderQuiz(){
+  var qz=state.quiz, q=QUESTIONS[qz.i], box=$('view-quiz'); box.textContent='';
+  var opts = q.axis ? [['a',q.a],['b',q.b]] : q.opts.filter(function(o){ return !(q.pick==='focus2' && o[0]===qz.ans[qz.i-1]); });
+  box.append(
+    h('div',null, h('p',{class:'label',text:'Question '+(qz.i+1)+' of '+QUESTIONS.length}),
+      h('div',{class:'prog',role:'progressbar','aria-valuemin':0,'aria-valuemax':QUESTIONS.length,'aria-valuenow':qz.i}, h('i',{style:'width:'+(qz.i/QUESTIONS.length*100)+'%'}))),
+    h('p',{class:'q',text:q.q}),
+    h('div',{class:'opts'}, opts.map(function(o){
+      return h('button',{class:'opt'+(qz.ans[qz.i]===o[0]?' sel':''),text:o[1],onclick:function(){
+        qz.ans[qz.i]=o[0]; if(q.pick==='focus1'&&qz.ans[qz.i+1]===o[0]) qz.ans[qz.i+1]=undefined;
+        if(qz.i<QUESTIONS.length-1){ qz.i++; renderQuiz(); } else endQuiz(true);
+      }});
+    })),
+    h('p',{class:'muted small',text:q.axis?'Pick the one closer to you, even if neither is perfect.':'Pick one.'}),
+    h('div',{class:'quiznav'},
+      h('button',{class:'btn',text:'Back',disabled:qz.i===0,onclick:function(){ qz.i--; renderQuiz(); }}),
+      h('button',{class:'btn quiet',text:'Cancel',onclick:function(){ endQuiz(false); }}))
+  );
+  var first=box.querySelector('.opt'); if(first) first.focus({preventScroll:true});
+}
+
+/* ---------- Profile panel ---------- */
+function axisRow(a,you,gym){
+  var t=h('div',{class:'track'});
+  if(gym!=null) t.append(h('span',{class:'gym',style:'left:'+(4+gym*92)+'%',title:'This gym'}));
+  t.append(h('span',{class:'you',style:'left:'+(4+you*92)+'%',title:'You'}));
+  return h('div',{class:'axis'}, h('div',{class:'ends'}, h('span',{text:a.lo}), h('span',{text:a.hi})), t);
+}
+function renderProfile(){
+  var p=profile(), box=$('profile'); box.textContent='';
+  var f1=topKey(p.focus), f2=secondKey(p.focus), a1=topKey(p.aes), a2=secondKey(p.aes);
+  box.append(
+    h('p',{class:'label',text:state.profile?'Your training vibe':'Example training vibe'}),
+    h('p',{class:'arch',text:archetype(p)}),
+    h('div',{class:'chips'},
+      h('span',{class:'chip',text:'Trains for: '+FOCUS[f1]+(f2?', then '+FOCUS[f2].toLowerCase():'')}),
+      h('span',{class:'chip',text:'Identity: '+AES[a1]+(a2?' and '+AES[a2].toLowerCase():'')})),
+    AXES.map(function(a){return axisRow(a,p[a.id])}),
+    h('div',null, h('button',{class:'btn',text:state.profile?'Retake the quiz':'Take the quiz',onclick:startQuiz}))
+  );
+}
+
+/* ---------- Location ---------- */
+function note(msg,err){ var n=$('geo-note'); n.textContent=msg; n.className='note'+(err?' err':''); }
+function setLoc(lat,lon,label){
+  state.loc={lat:lat,lon:lon,label:label}; save('loc',state.loc);
+  var cur=AREAS.map(function(a){return a[0]}).indexOf(label); $('sel-area').value=cur>=0?String(cur):'';
+  state.near={status:'idle',key:'',items:[],err:''};
+  render();
+  if(map) map.setView([lat,lon],Math.max(map.getZoom(),12));
+  if(state.tab==='nearby') findNearby();
+}
+function farNote(){ if(!inFW()) note('You are about '+Math.round(miles(state.loc.lat,state.loc.lon,FW.lat,FW.lon))+' miles from Fort Worth. Vibe matches only cover Fort Worth gyms so far, but Nearby gyms works anywhere.',true); }
+function useGeo(){
+  if(!navigator.geolocation){ note("This browser can't share a location. Type an address or pick an area.",true); return; }
+  note('Finding you…'); $('btn-geo').disabled=true;
+  navigator.geolocation.getCurrentPosition(function(pos){
+    $('btn-geo').disabled=false;
+    setLoc(pos.coords.latitude,pos.coords.longitude,'My location');
+    var acc=pos.coords.accuracy; note('Using your current location'+(acc>800?', accurate to about '+(Math.round(acc/1609*10)/10||0.5)+' mi':'')+'.'); farNote();
+  },function(err){
+    $('btn-geo').disabled=false;
+    note(err&&err.code===1?'Location permission was denied. Type an address or pick an area instead.':'Could not get your location here. Type an address or pick an area instead.',true);
+  },{enableHighAccuracy:true,timeout:10000,maximumAge:300000});
+}
+function searchAddr(q){
+  note('Looking up that address…');
+  var url=NOMINATIM+'?format=jsonv2&limit=1&countrycodes=us&viewbox=-97.75,33.10,-96.95,32.50&q='+encodeURIComponent(q);
+  fetch(url,{headers:{'Accept':'application/json'}}).then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); }).then(function(js){
+    if(!js.length){ note("Couldn't find that address. Try adding the city or ZIP.",true); return; }
+    var r=js[0], short=r.display_name.split(',').slice(0,2).join(',').trim();
+    setLoc(+r.lat,+r.lon,short); note('Measuring from '+r.display_name+'.'); farNote();
+  }).catch(function(){ note("The address lookup didn't respond. Check your connection, or pick an area instead.",true); });
+}
+
+/* ---------- Nearby gym discovery ---------- */
+function nearKey(){ var r=Math.min(state.lim.maxDist,15); return state.loc.lat.toFixed(3)+','+state.loc.lon.toFixed(3)+','+r; }
+function findNearby(force){
+  var key=nearKey(), from={lat:state.loc.lat,lon:state.loc.lon};
+  if(!force && state.near.key===key && state.near.status==='done') return;
+  var cached=null; try{ cached=JSON.parse(sessionStorage.getItem('cgm.near.'+key)||'null'); }catch(e){}
+  if(cached && !force){ ingest(cached,key,from); return; }
+  state.near={status:'loading',key:key,items:[],err:''}; renderNearby();
+  var meters=Math.round(Math.min(state.lim.maxDist,15)*1609.34), body='data='+encodeURIComponent(osmQuery(from.lat,from.lon,meters));
+  var tryAt=function(i){
+    return fetch(OVERPASS[i],{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body})
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .catch(function(e){ if(i+1<OVERPASS.length) return tryAt(i+1); throw e; });
+  };
+  tryAt(0).then(function(js){
+    var els=js.elements||[]; try{ sessionStorage.setItem('cgm.near.'+key,JSON.stringify(els)); }catch(e){}
+    if(state.near.key===key) ingest(els,key,from);
+  }).catch(function(){
+    if(state.near.key!==key) return;
+    state.near={status:'error',key:key,items:[],err:"Couldn't reach the OpenStreetMap gym search. Check your connection and try again in a minute."};
+    renderNearby(); drawMap();
+  });
+}
+function ingest(els,key,from){
+  var seen={}, items=[];
+  els.forEach(function(el){ var p=osmPlace(el,from); if(!p) return;
+    var dup=normName(p.name)+'|'+p.lat.toFixed(3)+','+p.lon.toFixed(3); if(seen[dup]) return; seen[dup]=1;
+    p.g=dossierFor(p,GYMS); items.push(p); });
+  state.near={status:'done',key:key,items:items,err:''};
+  renderNearby(); drawMap();
+}
+function matchFor(gid){ var all=lastRes.ok.concat(lastRes.out); for(var i=0;i<all.length;i++) if(all[i].g.id===gid) return all[i]; return null; }
+function renderFilters(){
+  var box=$('filters'); box.textContent='';
+  var counts={all:0,h24:0}; state.near.items.forEach(function(p){ counts.all++; counts[p.kind]=(counts[p.kind]||0)+1; if(p.h24) counts.h24++; });
+  var opts=[['all','All']].concat(Object.keys(KINDS).map(function(k){return [k,KINDS[k]]})).concat([['h24','Open 24/7'],['unrated','Not rated yet']]);
+  opts.forEach(function(o){
+    var n=o[0]==='unrated'?state.near.items.filter(function(p){return !p.g}).length:(counts[o[0]]||0);
+    if(state.near.status==='done' && !n && o[0]!=='all' && state.filter!==o[0]) return;
+    box.append(h('button',{class:'chip','aria-pressed':state.filter===o[0]?'true':'false',text:o[1]+(state.near.status==='done'?' ('+n+')':''),onclick:function(){ state.filter=o[0]; renderNearby(); }}));
+  });
+}
+function placeFilter(p){
+  if(state.filter==='all') return true; if(state.filter==='h24') return p.h24; if(state.filter==='unrated') return !p.g; return p.kind===state.filter;
+}
+function isSaved(id){ return id.slice(0,4)==='osm:'?!!state.saved[id]:state.short.indexOf(id)>=0; }
+function toggleSave(id,snap){
+  if(id.slice(0,4)==='osm:'){ if(state.saved[id]) delete state.saved[id]; else state.saved[id]=snap; save('saved',state.saved); }
+  else { var i=state.short.indexOf(id); if(i>=0) state.short.splice(i,1); else state.short.push(id); save('short',state.short); }
+  render();
+}
+function snapOf(p){ return {id:p.id,name:p.name,kind:p.kind,lat:p.lat,lon:p.lon,addr:p.addr,hours:p.hours,h24:p.h24,site:p.site,phone:p.phone,osm:p.osm}; }
+function placeCard(p){
+  var m=p.g?matchFor(p.g.id):null, sid=p.g?p.g.id:p.id, saved=isSaved(sid), wanted=!!state.want[p.id];
+  var chips=h('div',{class:'chips'}, h('span',{class:'chip cat',text:KINDS[p.kind]}),
+    m?h('span',{class:'chip good',text:m.score+'% vibe match'}):h('span',{class:'chip',text:'Not rated yet'}),
+    p.h24?h('span',{class:'chip',text:'Open 24/7'}):null,
+    m&&m.breaks.length?m.breaks.map(function(b){return h('span',{class:'chip warn',text:b})}):null);
+  var facts=h('div',{class:'facts'}, p.addr?h('span',{text:p.addr}):null, h('span',{text:p.hours?'Hours: '+p.hours:'Hours not listed'}));
+  var acts=h('div',{class:'acts'},
+    h('button',{class:'btn','aria-pressed':saved?'true':'false',text:saved?'Saved':'Save',onclick:function(){ toggleSave(sid,snapOf(p)); }}),
+    link(dirUrl(p.lat,p.lon,p.g?p.g.name+', '+p.g.addr:(p.addr?p.name+', '+p.addr:p.lat+','+p.lon)),'Directions','btn'),
+    p.site?link(p.site,'Website','btn'):null,
+    p.phone?h('a',{class:'btn',href:'tel:'+p.phone.replace(/[^0-9+]/g,''),text:'Call'}):null,
+    m?h('button',{class:'btn',text:'See match',onclick:function(){ showCard(p.g.id); }}):
+      h('button',{class:'btn','aria-pressed':wanted?'true':'false',text:wanted?'Rating requested':'Rate this gym for me',title:'Tells us to build a vibe dossier for this gym',onclick:function(){
+        if(state.want[p.id]) delete state.want[p.id]; else state.want[p.id]=p.name; save('want',state.want); renderNearby(); }}));
+  return h('article',{class:'place'},
+    h('div',{class:'ptop'}, h('div',{style:'min-width:0;display:flex;flex-direction:column;gap:6px'}, h('h3',{text:p.name}), chips),
+      h('div',{class:'dist'}, h('b',{text:p.dist.toFixed(1)+' mi'}), h('div',{class:'small muted',text:'~'+driveMin(p.dist)+' min drive'}))),
+    facts, acts);
+}
+function renderNearby(){
+  var box=$('places'), n=$('near-note'); box.textContent=''; renderFilters();
+  $('btn-find').textContent=state.near.status==='done'?'Search again':'Find gyms near me';
+  if(state.near.status==='idle'){ n.textContent='';
+    box.append(h('div',{class:'empty'}, h('p',{text:state.loc.example?'Set where you will live or work first, then search. Downtown is just a placeholder.':'Search around '+state.loc.label+'.'}),
+      h('div',{class:'row'}, state.loc.example?h('button',{class:'btn',text:'Use my location',onclick:useGeo}):null, h('button',{class:'btn primary',text:'Find gyms near '+(state.loc.example?'Downtown':state.loc.label),onclick:function(){ findNearby(true); }})))); return; }
+  if(state.near.status==='loading'){ n.textContent=''; box.append(h('p',{class:'muted'}, h('span',{class:'spin','aria-hidden':'true'}),'Searching OpenStreetMap for gyms within '+Math.min(state.lim.maxDist,15)+' miles of '+state.loc.label+'…')); return; }
+  if(state.near.status==='error'){ n.textContent=''; box.append(h('div',{class:'empty'}, h('p',{class:'note err',text:state.near.err}), h('button',{class:'btn',text:'Try again',onclick:function(){ findNearby(true); }}))); return; }
+  var list=state.near.items.filter(placeFilter).filter(function(p){ return !state.lim.need24||p.h24||(p.g&&p.g.h24); });
+  list.sort(function(a,b){
+    if(state.sort==='name') return a.name.localeCompare(b.name);
+    if(state.sort==='match'){ var ma=a.g?matchFor(a.g.id).score:-1, mb=b.g?matchFor(b.g.id).score:-1; return (mb-ma)||(a.dist-b.dist); }
+    return a.dist-b.dist;
+  });
+  var rated=state.near.items.filter(function(p){return p.g}).length;
+  n.textContent=list.length+' shown · '+rated+' have a vibe rating'+(state.lim.maxDist>15?' · search capped at 15 mi':'')+(state.lim.need24?' · 24/7 only':'');
+  if(!list.length){ box.append(h('p',{class:'muted',text:state.near.items.length?'Nothing matches this filter. Try All.':'OpenStreetMap lists no gyms within this distance. Raise your max distance and search again.'})); return; }
+  list.slice(0,150).forEach(function(p){ box.append(placeCard(p)); });
+  if(list.length>150) box.append(h('p',{class:'note',text:'Showing the first 150. Lower your max distance to narrow it down.'}));
+}
+
+/* ---------- Live map (Leaflet + OpenStreetMap/CARTO tiles, no API key) ---------- */
+var map=null, lyr={}, meMk=null, ringC=null;
+function dark(){ var t=document.documentElement.getAttribute('data-theme'); return t?t==='dark':(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches); }
+function initMap(){
+  if(map) return;
+  if(!window.L){ $('leaf').append(h('p',{class:'note err',style:'padding:16px',text:"The map library didn't load. Make sure the vendor folder sits next to index.html."})); return; }
+  map=L.map('leaf',{zoomControl:true,scrollWheelZoom:true}).setView([state.loc.lat,state.loc.lon],12);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/'+(dark()?'dark_all':'rastertiles/voyager')+'/{z}/{x}/{y}{r}.png',{
+    subdomains:'abcd',maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'}).addTo(map);
+  lyr.osm=L.layerGroup().addTo(map); lyr.ranked=L.layerGroup().addTo(map);
+  ringC=L.circle([state.loc.lat,state.loc.lon],{radius:1,color:'#B98600',weight:1.5,dashArray:'5 5',fillColor:'#F2B705',fillOpacity:.08,interactive:false}).addTo(map);
+  meMk=L.marker([state.loc.lat,state.loc.lon],{draggable:true,zIndexOffset:2000,keyboard:true,title:'Your starting point. Drag to move.',
+    icon:L.divIcon({className:'',html:'<div class="lyou"></div>',iconSize:[20,20],iconAnchor:[10,10]})}).addTo(map);
+  meMk.on('dragend',function(){ var ll=meMk.getLatLng(); setLoc(ll.lat,ll.lng,'Map pin'); note('Pin moved. Distances now measure from the yellow diamond.'); });
+  map.on('click',function(e){ if(!state.picking) return; setPicking(false); setLoc(e.latlng.lat,e.latlng.lng,'Map pin'); note('Pin dropped. Distances now measure from the yellow diamond.'); });
+  drawMap(); fitMap();
+}
+function setPicking(on){ state.picking=on; $('btn-pick').setAttribute('aria-pressed',on?'true':'false'); $('btn-pick').textContent=on?'Tap the map…':'Drop a pin'; $('tab-map').classList.toggle('picking',on); }
+function pinIcon(cls,label,size){ return L.divIcon({className:'',html:'<div class="lpin '+cls+'">'+(label||'')+'</div>',iconSize:[size,size],iconAnchor:[size/2,size/2],popupAnchor:[0,-size/2]}); }
+function popupFor(row,n){
+  var g=row.g;
+  return h('div',null, h('h3',{text:(n?'#'+n+' ':'')+g.name}),
+    h('div',{class:'chips'}, h('span',{class:'chip good',text:row.score+'% vibe match'}), h('span',{class:'chip',text:g.cat})),
+    h('p',{class:'small',text:row.dist.toFixed(1)+' mi · ~'+driveMin(row.dist)+' min drive · '+g.priceNote}),
+    row.breaks.length?h('p',{class:'small',style:'color:var(--warn)',text:row.breaks.join('. ')}):null,
+    h('div',{class:'row'}, h('button',{class:'btn primary',text:'See match',onclick:function(){ showCard(g.id); }}), link(dirUrl(g.lat,g.lon,g.name+', '+g.addr),'Directions','btn')));
+}
+function popupForPlace(p){
+  return h('div',null, h('h3',{text:p.name}), h('div',{class:'chips'}, h('span',{class:'chip cat',text:KINDS[p.kind]}), h('span',{class:'chip',text:'Not rated yet'})),
+    h('p',{class:'small',text:p.dist.toFixed(1)+' mi · ~'+driveMin(p.dist)+' min drive'+(p.hours?' · '+p.hours:'')}),
+    h('div',{class:'row'}, h('button',{class:'btn',text:state.saved[p.id]?'Saved':'Save',onclick:function(e){ toggleSave(p.id,snapOf(p)); e.target.textContent=state.saved[p.id]?'Saved':'Save'; }}),
+      link(dirUrl(p.lat,p.lon,p.addr?p.name+', '+p.addr:p.lat+','+p.lon),'Directions','btn'), p.site?link(p.site,'Website','btn'):null));
+}
+function drawMap(){
+  if(!map||!lastRes) return;
+  var ll=[state.loc.lat,state.loc.lon]; meMk.setLatLng(ll); ringC.setLatLng(ll);
+  ringC.setRadius(state.lim.maxDist<99?state.lim.maxDist*1609.34:1); ringC.setStyle({opacity:state.lim.maxDist<99?1:0,fillOpacity:state.lim.maxDist<99?.08:0});
+  lyr.ranked.clearLayers(); lyr.osm.clearLayers();
+  lastRes.out.forEach(function(r){ L.marker([r.g.lat,r.g.lon],{icon:pinIcon('out','',20),title:r.g.name+' (breaks a limit)'}).bindPopup(popupFor(r,0)).addTo(lyr.ranked); });
+  lastRes.ok.slice().reverse().forEach(function(r){ var n=lastRes.ok.indexOf(r)+1;
+    L.marker([r.g.lat,r.g.lon],{icon:pinIcon('',n,28),title:'#'+n+' '+r.g.name+', '+r.score+'%',zIndexOffset:1000-n}).bindPopup(popupFor(r,n)).addTo(lyr.ranked); });
+  state.near.items.forEach(function(p){ if(p.g) return;
+    L.marker([p.lat,p.lon],{icon:pinIcon('osm'+(state.saved[p.id]?' saved':''),'',16),title:p.name}).bindPopup(popupForPlace(p)).addTo(lyr.osm); });
+  $('btn-map-find').textContent=state.near.status==='loading'?'Searching…':state.near.status==='done'?(state.near.items.filter(function(p){return !p.g}).length+' other gyms shown'):'Show other gyms near me';
+  $('btn-map-find').disabled=state.near.status==='loading'||state.near.status==='done';
+}
+function fitMap(){
+  if(!map) return;
+  if(state.lim.maxDist<99) map.fitBounds(ringC.getBounds(),{padding:[20,20]}); else map.setView([state.loc.lat,state.loc.lon],11);
+}
+
+/* ---------- Match cards ---------- */
+function miniBars(labels,gymVals,userVals){
+  var box=h('div',{class:'bars'}), k, first=topKey(userVals), second=secondKey(userVals);
+  for(k in labels) box.append(h('span',{text:labels[k]}), h('div',{class:'bar'}, h('i',{style:'width:'+Math.round(gymVals[k]*100)+'%'})),
+      h('span',{class:'tag',text:k===first?'You: 1st':k===second?'You: 2nd':''}));
+  return box;
+}
+function showCard(id){
+  setTab('matches'); if(map) map.closePopup();
+  if(state.shortOnly && state.short.indexOf(id)<0){ state.shortOnly=false; render(); }
+  var c=$('card-'+id); if(c){ c.scrollIntoView({behavior:'smooth',block:'center'}); c.focus({preventScroll:true}); }
+}
+function card(row,n){
+  var g=row.g, p=profile(), rs=reasons(row), out=row.breaks.length>0, saved=state.short.indexOf(g.id)>=0;
+  var facts=h('div',{class:'facts'},
+    h('span',null,h('b',{text:row.dist.toFixed(1)+' mi'}),' · about '+driveMin(row.dist)+' min drive'),
+    h('span',{text:g.priceNote}), h('span',{text:g.hours}));
+  var why=h('div',{class:'why'});
+  if(rs.good.length) why.append(h('div',{class:'good'}, h('p',{class:'label',text:'Why it fits'}), h('ul',null,rs.good.map(function(t){return h('li',{text:t})}))));
+  if(rs.bad.length) why.append(h('div',{class:'bad'}, h('p',{class:'label',text:'Watch for'}), h('ul',null,rs.bad.map(function(t){return h('li',{text:t})}))));
+  var vote=state.votes[g.id];
+  var more=h('details',{class:'more'}, h('summary',{text:'Full dossier and tour questions'}),
+    h('div',{class:'moregrid'},
+      h('div',null, h('p',{class:'label',text:'You versus this gym'}),
+        h('div',{class:'legend'}, h('span',null,h('i',{class:'ly'}),'You'), h('span',null,h('i',{class:'lg'}),'Gym')),
+        AXES.map(function(a){return axisRow(a,p[a.id],g[a.id])})),
+      h('div',null, h('p',{class:'label',text:'What it trains'}), miniBars(FOCUS,g.focus,p.focus),
+        h('p',{class:'label',style:'margin-top:8px',text:'Identity'}), miniBars(AES,g.aes,p.aes)),
+      h('div',null, h('p',{class:'label',text:'Ask on your tour'}), h('ol',{class:'plain'}, g.ask.map(function(t){return h('li',{text:t})}))),
+      h('div',null, h('p',{class:'label',text:'Address'}), h('p',{text:g.addr}),
+        h('p',{class:'label',style:'margin-top:8px',text:'Where this dossier came from'}),
+        h('p',{class:'src muted'}, g.src.map(function(u,i){ return [i?', ':null, link(u,'Source '+(i+1))]; }).reduce(function(a,b){return a.concat(b)},[])))
+    ));
+  return h('article',{class:'card'+(out?' out':''),id:'card-'+g.id,tabindex:-1},
+    h('div',{class:'cardtop'},
+      h('div',{class:'rank',text:out?'–':String(n)}),
+      h('div',{style:'min-width:0;display:flex;flex-direction:column;gap:6px'}, h('h3',{text:g.name}),
+        h('div',{class:'chips'}, h('span',{class:'chip cat',text:g.cat}), h('span',{class:'chip',text:'Web research only, not visited yet'}),
+          g.dayPass?h('span',{class:'chip',text:'Day pass or trial'}):null,
+          row.breaks.map(function(b){return h('span',{class:'chip warn',text:b})}))),
+      h('div',{class:'score'}, h('b',{text:row.score+'%'}), h('div',{class:'small muted',text:'vibe match'}))),
+    facts, why,
+    h('div',{class:'cardacts'},
+      h('button',{class:'btn','aria-pressed':saved?'true':'false',text:saved?'On your shortlist':'Add to shortlist',onclick:function(){ toggleSave(g.id); }}),
+      link(dirUrl(g.lat,g.lon,g.name+', '+g.addr),'Directions','btn'),
+      h('button',{class:'btn quiet',text:'On map',onclick:function(){ setTab('map'); if(map){ map.setView([g.lat,g.lon],15); } }}),
+      h('span',{class:'sp'}),
+      h('span',{class:'small muted',text:'Does this match sound right?'}),
+      h('button',{class:'btn','aria-pressed':vote==='yes'?'true':'false',text:'Yes',onclick:function(){ state.votes[g.id]=vote==='yes'?undefined:'yes'; save('votes',state.votes); render(); }}),
+      h('button',{class:'btn','aria-pressed':vote==='no'?'true':'false',text:'No',onclick:function(){ state.votes[g.id]=vote==='no'?undefined:'no'; save('votes',state.votes); render(); }})),
+    more);
+}
+
+/* ---------- Shortlist and tour planner ---------- */
+function shortItems(){
+  var items=[];
+  state.short.forEach(function(id){ var r=matchFor(id); if(r) items.push({id:id,name:r.g.name,sub:r.score+'% vibe match · '+r.g.cat,lat:r.g.lat,lon:r.g.lon,dest:r.g.name+', '+r.g.addr,site:r.g.site,ask:r.g.ask.concat(GENERIC_ASK.slice(0,2)),hours:r.g.hours,price:r.g.priceNote}); });
+  Object.keys(state.saved).forEach(function(id){ var s=state.saved[id]; items.push({id:id,name:s.name,sub:KINDS[s.kind]+' · not rated yet',lat:s.lat,lon:s.lon,dest:s.addr?s.name+', '+s.addr:s.lat+','+s.lon,site:s.site,ask:GENERIC_ASK,hours:s.hours||'Hours not listed',phone:s.phone}); });
+  items.forEach(function(it){ it.dist=miles(state.loc.lat,state.loc.lon,it.lat,it.lon); });
+  return items.sort(function(a,b){return a.dist-b.dist});
+}
+function tourOf(id){ return state.tour[id]||(state.tour[id]={q:[],notes:'',date:'',stars:0}); }
+function saveTour(){ save('tour',state.tour); }
+function renderShort(){
+  var box=$('shortlist'), items=shortItems(); box.textContent='';
+  if(!items.length){ box.append(h('div',{class:'empty'}, h('p',{text:'Nothing saved yet. Add gyms from your matches or from Nearby gyms, and they will show up here as a tour plan.'}),
+    h('div',{class:'row'}, h('button',{class:'btn',text:'See matches',onclick:function(){ setTab('matches'); }}), h('button',{class:'btn',text:'Find nearby gyms',onclick:function(){ setTab('nearby'); }})))); return; }
+  items.forEach(function(it){
+    var t=tourOf(it.id);
+    var stars=h('div',{class:'stars',role:'group','aria-label':'How did it feel?'}, [1,2,3,4,5].map(function(n){
+      return h('button',{class:'btn','aria-pressed':t.stars===n?'true':'false','aria-label':n+' out of 5',text:String(n),onclick:function(){ t.stars=t.stars===n?0:n; saveTour(); renderShort(); }}); }));
+    box.append(h('article',{class:'place'},
+      h('div',{class:'ptop'}, h('div',{style:'min-width:0;display:flex;flex-direction:column;gap:6px'}, h('h3',{text:it.name}),
+          h('div',{class:'chips'}, h('span',{class:'chip',text:it.sub}), t.date?h('span',{class:'chip good',text:'Toured '+t.date}):h('span',{class:'chip you',text:'Not toured yet'}))),
+        h('div',{class:'dist'}, h('b',{text:it.dist.toFixed(1)+' mi'}), h('div',{class:'small muted',text:'~'+driveMin(it.dist)+' min drive'}))),
+      h('div',{class:'facts'}, h('span',{text:it.hours}), it.price?h('span',{text:it.price}):null),
+      h('div',{class:'acts'}, link(dirUrl(it.lat,it.lon,it.dest),'Directions','btn'), it.site?link(it.site,'Website','btn'):null,
+        it.phone?h('a',{class:'btn',href:'tel:'+it.phone.replace(/[^0-9+]/g,''),text:'Call to book a tour'}):null,
+        h('button',{class:'btn quiet',text:'Remove',onclick:function(){ toggleSave(it.id,null); }})),
+      h('details',{class:'more',open:!t.date?true:null}, h('summary',{text:'Tour checklist and notes'}),
+        h('div',{class:'tour',style:'margin-top:10px'},
+          h('div',null, h('p',{class:'label',text:'Ask on your tour'}), h('ul',null, it.ask.map(function(q,i){
+            return h('li',null, h('label',null, h('input',{type:'checkbox',checked:t.q[i]?true:null,onchange:function(e){ t.q[i]=e.target.checked; saveTour(); }}), h('span',{text:q}))); }))),
+          h('div',null, h('label',{class:'label',for:'n-'+it.id,text:'What you noticed'}),
+            h('textarea',{class:'notes',id:'n-'+it.id,placeholder:'Crowd at 6pm, music, filming, racks free, staff vibe…',oninput:function(e){ t.notes=e.target.value; saveTour(); }}, t.notes),
+            h('div',{class:'row'},
+              h('div',{class:'field'}, h('label',{class:'label',for:'d-'+it.id,text:'Toured on'}), h('input',{type:'date',id:'d-'+it.id,value:t.date,onchange:function(e){ t.date=e.target.value; saveTour(); renderShort(); }})),
+              h('div',{class:'field'}, h('span',{class:'label',text:'Did it fit your vibe?'}), stars)))))
+    ));
+  });
+}
+
+/* ---------- Main render ---------- */
+var lastRes=null;
+function render(){
+  var p=profile(), res=rank(p,state.loc,state.lim); lastRes=res;
+  var b=$('banner'); b.textContent=''; b.hidden=!!state.profile;
+  if(!state.profile) b.append(h('p',null,h('b',{text:'These matches use an example profile. '}),'Take the quiz to see your own, then set where you will live or work.'),
+    h('button',{class:'btn primary',text:'Take the quiz',onclick:startQuiz}));
+  $('btn-quiz').textContent=state.profile?'Retake the quiz':'Take the 2-minute quiz';
+  $('loc-label').textContent=state.loc.label+(state.loc.example?' (placeholder)':'');
+  $('sel-dist').value=String(state.lim.maxDist); $('sel-budget').value=String(state.lim.budget); $('chk-24').checked=state.lim.need24;
+  $('short-n').textContent=String(state.short.length+Object.keys(state.saved).length);
+  renderProfile();
+  var keep=function(r){ return !state.shortOnly||state.short.indexOf(r.g.id)>=0; };
+  var cards=$('cards'), outs=$('outs'); cards.textContent=''; outs.textContent='';
+  var ok=res.ok.filter(keep), out=res.out.filter(keep);
+  $('list-title').textContent=(state.profile?'Your matches':'Example matches')+' from '+state.loc.label;
+  $('btn-short').setAttribute('aria-pressed',state.shortOnly?'true':'false'); $('btn-short').textContent='Shortlist only ('+state.short.length+')';
+  if(!inFW()) cards.append(h('p',{class:'note err',text:'Vibe matches only cover Fort Worth so far, so every rated gym is far from this starting point. Nearby gyms still lists what is around you.'}));
+  res.ok.forEach(function(r,i){ if(keep(r)) cards.append(card(r,i+1)); });
+  if(ok.length && res.ok[0].score<60 && !state.shortOnly) cards.prepend(h('p',{class:'note',text:'No gym in the current set is a strong match for this profile. These are the closest available, so read the "Watch for" notes before you tour, and check Nearby gyms for places we have not rated yet.'}));
+  if(!ok.length) cards.append(h('p',{class:'muted',text:state.shortOnly?'Nothing on your shortlist fits your limits yet. Add gyms with the shortlist button on each card.':'No rated gym fits all three limits. Widen your distance or budget, check the gyms below, or look at Nearby gyms.'}));
+  if(out.length){ outs.append(h('h2',{text:'Fits your vibe, breaks a limit'}), h('p',{class:'muted small',text:'Ranked by match. The orange tag shows which limit each one breaks.'}));
+    out.forEach(function(r){ outs.append(card(r,0)); }); }
+  renderNearby();
+  drawMap();
+  if(state.tab==='short') renderShort();
+}
+
+/* ---------- Feedback summary ---------- */
+function summary(){
+  var p=profile(), res=lastRes, L=[];
+  L.push('Cowtown Gym Match summary'); L.push('Profile: '+archetype(p)+(state.profile?'':' (example, quiz not taken)'));
+  L.push('Axes (0 to 1): camera-friendly '+p.vis+', loud '+p.energy+', coached '+p.structure+', community '+p.social);
+  L.push('Focus: '+FOCUS[topKey(p.focus)]+(secondKey(p.focus)?' then '+FOCUS[secondKey(p.focus)]:'')+' | Identity: '+AES[topKey(p.aes)]);
+  L.push('Start: '+state.loc.label+' | Limits: '+state.lim.maxDist+' mi, $'+state.lim.budget+', 24/7 '+(state.lim.need24?'yes':'no'));
+  res.ok.slice(0,3).forEach(function(r,i){ L.push((i+1)+'. '+r.g.name+' '+r.score+'% '+r.dist.toFixed(1)+' mi'); });
+  var v=Object.keys(state.votes).filter(function(k){return state.votes[k]}).map(function(k){ var g=GYMS.filter(function(x){return x.id===k})[0]; return g?g.name+': '+state.votes[k]:null; }).filter(Boolean);
+  L.push('Sounds right? '+(v.length?v.join('; '):'no votes'));
+  var items=shortItems();
+  L.push('Shortlist: '+(items.length?items.map(function(it){ var t=state.tour[it.id]; return it.name+(t&&t.date?' (toured'+(t.stars?', '+t.stars+'/5':'')+')':''); }).join(', '):'none'));
+  var w=Object.keys(state.want).map(function(k){return state.want[k]});
+  L.push('Wants a rating for: '+(w.length?w.join(', '):'none'));
+  L.push('Found via: '+($('fb-how').value||'not answered')+' | Would pay: '+($('fb-pay').value||'not answered'));
+  return L.join('\n');
+}
+function copySummary(){
+  var txt=summary(), box=$('copybox'); box.value=txt; box.hidden=false;
+  var done=function(ok){ $('copy-note').textContent=ok?'Copied. Paste it into a message.':'Select the text below and copy it.'; if(!ok){ box.focus(); box.select(); } };
+  try{ navigator.clipboard.writeText(txt).then(function(){done(true)},function(){done(false)}); }catch(e){ done(false); }
+}
+
+/* ---------- Matching agent (Claude), only where the viewer can run it ---------- */
+var turns=[], ctl=null;
+function agentRules(){
+  var p=profile(), res=lastRes;
+  var dossiers=GYMS.map(function(g){ return {name:g.name,category:g.cat,address:g.addr,price:g.priceNote,hours:g.hours,open247:g.h24,
+    scores:{camera_friendly:g.vis,loud:g.energy,coached:g.structure,community:g.social,focus:g.focus,identity:g.aes},notes:g.notes,verified_in_person:false}; });
+  var ranked=res.ok.concat(res.out).map(function(r){ return {name:r.g.name,match_pct:r.score,miles:+r.dist.toFixed(1),breaks_limits:r.breaks}; });
+  return 'You are the matching agent inside Cowtown Gym Match, a tool that helps people who just moved to Fort Worth pick a gym by training style and atmosphere.\n'+
+   'Rules: use only the dossiers below. Do not invent amenities, prices, hours, or policies. Every dossier is web research that has not been verified in person, so say what the person should confirm on a tour. '+
+   'Respect the hard limits. Score axes run 0 to 1. Explain trade-offs between gyms in plain language and say which one you would tour first and why. '+
+   'Plain text only, no markdown, under 170 words.\n\n'+
+   'PROFILE: '+JSON.stringify({archetype:archetype(p),camera_friendly:p.vis,loud:p.energy,coached:p.structure,community:p.social,focus_weights:p.focus,identity_weights:p.aes,is_example:!state.profile})+'\n'+
+   'START POINT: '+state.loc.label+'\nLIMITS: '+JSON.stringify(state.lim)+'\n'+
+   'RANKING FROM THE SCORING MODEL: '+JSON.stringify(ranked)+'\nDOSSIERS: '+JSON.stringify(dossiers);
+}
+function wireAgent(sample){
+  $('agent').hidden=false;
+  var out=$('agent-out'), stop=$('btn-stop');
+  var COPY={rate_limited:'Claude is busy or you have hit a usage limit. Try again in a bit.',session_expired:'Sign in to Claude again, then retry.',refused:'Claude declined that question. Try rewording it.',empty_completion:'No answer came back. Try a shorter question.'};
+  function ask(q){
+    if(ctl) ctl.abort(); ctl=new AbortController(); var mine=ctl;
+    turns.push({role:'user',content:q}); if(turns.length>8) turns=turns.slice(-8);
+    if(turns[0].role!=='user') turns.shift();
+    out.textContent='Thinking…'; stop.hidden=false;
+    sample([{role:'user',content:agentRules()}].concat(turns),{cache:false,signal:mine.signal,onText:function(u){ out.textContent=u.text; }})
+    .then(function(r){ out.textContent=r.text; turns.push({role:'assistant',content:r.text}); },
+      function(e){ turns.pop();
+        if(['not_granted','sampling_disabled','not_declared','capability_disabled','capability_removed'].indexOf(e.code)>=0){ $('agent').hidden=true; return; }
+        out.textContent=e.code==='refused'?'':(e.text||''); if(e.code!=='cancelled') out.textContent+=(out.textContent?'\n\n':'')+(COPY[e.code]||'Something interrupted the answer. Try again.'); })
+    .then(function(){ if(ctl===mine){ stop.hidden=true; } });
+  }
+  $('btn-explain').addEventListener('click',function(){ turns=[]; ask('Explain my top 3 matches and tell me which to tour first.'); });
+  var go=function(){ var v=$('agent-q').value.trim(); if(v){ ask(v); $('agent-q').value=''; } };
+  $('btn-ask').addEventListener('click',go);
+  $('agent-q').addEventListener('keydown',function(e){ if(e.key==='Enter') go(); });
+  stop.addEventListener('click',function(){ if(ctl) ctl.abort(); });
+}
+
+/* ---------- Wire up ---------- */
+var sel=$('sel-area'); sel.append(h('option',{value:'',text:'Or pick a Fort Worth area'}));
+AREAS.forEach(function(a,i){ sel.append(h('option',{value:String(i),text:a[0]})); });
+var cur=AREAS.map(function(a){return a[0]}).indexOf(state.loc.label); sel.value=cur>=0&&!state.loc.example?String(cur):'';
+sel.addEventListener('change',function(){ if(sel.value==='') return; var a=AREAS[+sel.value]; setLoc(a[1],a[2],a[0]); note('Measuring from '+a[0]+'.'); });
+$('btn-geo').addEventListener('click',useGeo);
+$('addr-form').addEventListener('submit',function(e){ e.preventDefault(); var q=$('addr').value.trim(); if(q) searchAddr(q); });
+$('btn-quiz').addEventListener('click',startQuiz);
+$('sel-dist').addEventListener('change',function(){ state.lim.maxDist=+this.value; save('lim',state.lim); state.near={status:'idle',key:'',items:[],err:''}; render(); fitMap(); if(state.tab==='nearby') findNearby(); });
+$('sel-budget').addEventListener('change',function(){ state.lim.budget=+this.value; save('lim',state.lim); render(); });
+$('chk-24').addEventListener('change',function(){ state.lim.need24=this.checked; save('lim',state.lim); render(); });
+$('btn-short').addEventListener('click',function(){ state.shortOnly=!state.shortOnly; render(); });
+$('btn-copy').addEventListener('click',copySummary);
+$('btn-find').addEventListener('click',function(){ findNearby(true); });
+$('btn-map-find').addEventListener('click',function(){ findNearby(); });
+$('btn-pick').addEventListener('click',function(){ setPicking(!state.picking); });
+$('sel-sort').addEventListener('change',function(){ state.sort=this.value; renderNearby(); });
+document.querySelectorAll('.tab').forEach(function(b){
+  b.addEventListener('click',function(){ setTab(b.dataset.tab); });
+  b.addEventListener('keydown',function(e){ var tabs=[].slice.call(document.querySelectorAll('.tab')), i=tabs.indexOf(b);
+    if(e.key==='ArrowRight'||e.key==='ArrowLeft'){ var nx=tabs[(i+(e.key==='ArrowRight'?1:tabs.length-1))%tabs.length]; nx.focus(); setTab(nx.dataset.tab); } });
+});
+render(); setTab(state.tab);
+if(window.claude&&window.claude.use) window.claude.use('sample').then(function(sm){ if(sm) wireAgent(sm); },function(){});
+})();
+</script>
+</body>
+</html>
